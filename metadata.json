@@ -1,0 +1,6 @@
+{
+  "name": "G&OT Process Simulator",
+  "description": "An interactive, high-fidelity Chemical Engineering Simulator modeled after Aspen HYSYS, designed for visualizing physics, thermodynamics, and kinetics of industrial equipment. بإشراف وتطوير المهندس علي سيف الدين حيدر النوفل.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
