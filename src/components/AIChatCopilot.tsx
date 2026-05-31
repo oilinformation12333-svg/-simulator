@@ -47,6 +47,14 @@ export default function AIChatCopilot({
   }>({ stage: 'IDLE', percent: 0, msg: '' });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesTerminalRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll messages terminal to the absolute bottom on updates so that 'Apply' buttons and banners are always immediately visible
+  useEffect(() => {
+    if (messagesTerminalRef.current) {
+      messagesTerminalRef.current.scrollTop = messagesTerminalRef.current.scrollHeight;
+    }
+  }, [messages, loading]);
 
   // File reader helper for image data extracting
   const handleFile = (file: File) => {
@@ -194,6 +202,12 @@ Keep your explanation concise, written in beautiful engineering Arabic. Show equ
         text: finalResponseText,
         flowsheet: extractedFlowsheet
       }]);
+
+      if (extractedFlowsheet) {
+        setTimeout(() => {
+          handleApply(extractedFlowsheet);
+        }, 150);
+      }
     } catch (err: any) {
       console.warn("Gemini API connection error, fallback to offline-safe solver:", err);
       // Fallback local heuristic chemical solver representation (Resilience)
@@ -278,6 +292,12 @@ Keep your explanation concise, written in beautiful engineering Arabic. Show equ
         text: responseText,
         flowsheet: flowsheetData
       }]);
+
+      if (flowsheetData) {
+        setTimeout(() => {
+          handleApply(flowsheetData);
+        }, 150);
+      }
     } finally {
       setLoading(false);
     }
@@ -377,7 +397,11 @@ Keep your explanation concise, written in beautiful engineering Arabic. Show equ
       </div>
 
       {/* Messages Window */}
-      <div className="flex-1 overflow-y-auto my-3 space-y-3 p-3 bg-slate-950 rounded-xl border border-slate-850/60 font-sans" id="ai-messages-terminal">
+      <div 
+        ref={messagesTerminalRef}
+        className="flex-1 overflow-y-auto my-3 space-y-3 p-3 bg-slate-950 rounded-xl border border-slate-850/60 font-sans" 
+        id="ai-messages-terminal"
+      >
         {messages.map((m, index) => (
           <div key={index} className={`flex flex-col ${m.sender === 'USER' ? 'items-end' : 'items-start'}`}>
             <span className="text-[9px] text-slate-500 font-mono mb-0.5 select-none uppercase">
