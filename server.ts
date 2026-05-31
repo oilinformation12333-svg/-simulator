@@ -262,7 +262,7 @@ ${equipmentFound.map((e, i) => `${i + 1}. **${e.label}** (${e.type})`).join('\n'
 
 // API Endpoint for secure chemical engineering process diagnostics
 app.post('/api/diagnostics', async (req, res) => {
-  const { prompt, image } = req.body;
+  const { prompt, image, activeNodes, activeStreams } = req.body;
   
   if (!prompt) {
     return res.status(400).json({ error: 'من فضلك أدخل نص الاستشارة أو الاستفسار الكيميائي.' });
@@ -282,6 +282,17 @@ app.post('/api/diagnostics', async (req, res) => {
 
   try {
     const ai = getGeminiClient();
+
+    // Compile active flowsheet memory context for Gemini
+    const flowsheetContext = (activeNodes && activeNodes.length > 0)
+      ? `\n\nالمخطط الحالي المتواجد على لوحة الرسم للمستخدم يحتوي على الوحدات والتوصيلات الكيميائية التالية:
+- الأجهزة والمعدات الحالية (Nodes): ${JSON.stringify(activeNodes)}
+- أنابيب وتيارات السريان الحالية (Streams): ${JSON.stringify(activeStreams)}
+
+مهم جداً: إذا طلب المستخدم تعديل هذا المخطط، أو تغيير بارامتر (مثل زيادة درجة حرارة، أو تغيير تدفق، أو تعديل ضغط)، أو إضافة معدة جديدة، أو حذف معدة، فيرجى قراءة هذه البيانات السابقة وإجراء التعديل الهندسي المطلوب وتحديث بارامترات كل الأنابيب المتأثرة هيدروليكياً، ثم إرجاع المخطط المستحدث كاملاً ومحدثاً في قالب \`\`\`json-flowsheet مع الحفاظ على الأجهزة الأخرى وتجنب التراكب الإحداثي.`
+      : `\n\nالمخطط الحالي فارغ أو غير متوفر في اللوحة. يرجى اقتراح وتصميم مخطط كيميائي متكامل كلياً بناءً على استفسار المستخدم وتوليده بترميز \`\`\`json-flowsheet.`;
+
+    const promptWithContext = flowsheetContext + "\n\nسؤال واستفسار المهندس الحالي:\n" + prompt;
     
     // Support multimodal input sequence when image is attached
     const contents = image ? {
@@ -293,10 +304,10 @@ app.post('/api/diagnostics', async (req, res) => {
           }
         },
         {
-          text: prompt
+          text: promptWithContext
         }
       ]
-    } : prompt;
+    } : promptWithContext;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.5-flash',

@@ -29,28 +29,15 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Unregister any active service workers to prevent stale cache bugs (such as cached index.html pointing to missing chunks)
+// Register Service Worker for PWA installation support
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister().then(() => {
-        console.log('Stale Service Worker unregistered successfully.');
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        console.log('PWA ServiceWorker successfully registered with scope:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('PWA ServiceWorker registration failed:', err);
       });
-    }
-  }).catch((err) => {
-    console.warn('Failed to get service worker registrations:', err);
-  });
-}
-
-// Clear all caches
-if ('caches' in window) {
-  caches.keys().then((names) => {
-    for (const name of names) {
-      caches.delete(name).then(() => {
-        console.log('Stale cache deleted:', name);
-      });
-    }
-  }).catch((err) => {
-    console.warn('Failed to clear caches:', err);
   });
 }

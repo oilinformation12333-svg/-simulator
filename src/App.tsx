@@ -3,26 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { UnitType, SimulationState, Alarm, FSNode, FSStream } from './types';
-import { CASE_STUDIES } from './data/chemData';
-import BrandingHeader from './components/BrandingHeader';
+import React, { useState } from 'react';
+import { UnitType, SimulationState, FSNode, FSStream, Alarm } from './types';
+import { CASE_STUDIES, CHEMICAL_REFS } from './data/chemData';
 import ProcessFlowsheet from './components/ProcessFlowsheet';
-import UnitDetails from './components/UnitDetails';
-import StatusMonitor from './components/StatusMonitor';
-import AdminPanel from './components/AdminPanel';
 import AIChatCopilot from './components/AIChatCopilot';
 import DesignCalculations from './components/DesignCalculations';
 import ProjectHistory from './components/ProjectHistory';
-import PWAInstallBanner from './components/PWAInstallBanner';
-import { appendActivityLog } from './utils/activityLogger';
+import G_OTLogo from './components/G_OTLogo';
 import {
-  AlertCircle, Terminal, Info, Users, HelpCircle, Activity, LayoutGrid,
-  Database, ArrowRightLeft, Sparkles, BookOpen, ShieldAlert, Check, X
+  AlertCircle, Terminal, Info, HelpCircle, Activity, LayoutGrid,
+  Database, ArrowRightLeft, Sparkles, BookOpen, ShieldAlert, Check, X,
+  GraduationCap, Key, Lock, Compass, Cpu, Mail, Star, Flame, Waves, Settings
 } from 'lucide-react';
 
 export default function App() {
-  // Multi-Project system flowsheet hooks
+  const [activeTab, setActiveTab] = useState<'WELCOME' | 'WORKSPACE' | 'CALCULATIONS' | 'HISTORY' | 'REFERENCES'>('WELCOME');
+  const [activeSideTab, setActiveSideTab] = useState<'AI' | 'CALCULATIONS' | 'HISTORY'>('AI');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+
   const [nodes, setNodes] = useState<FSNode[]>([
     { id: 'node_tank_1', type: 'TANK', label: 'T-101 (EtOH Feed Tank)', x: 100, y: 150, params: { volume: 5000, suctionPressure: 1.0 } },
     { id: 'node_pump_1', type: 'PUMP', label: 'P-101 (Centrifugal Booster)', x: 300, y: 150, params: { efficiency: 75, suctionPressure: 1.0, flowRate: 45, liquidDensity: 820, vaporPressure: 0.35, suctionStaticHead: 4.5 } },
@@ -36,137 +39,49 @@ export default function App() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_pump_1');
 
-  // Undo/Redo tracking stacks
-  const [undoStack, setUndoStack] = useState<{ nodes: FSNode[]; streams: FSStream[] }[]>([]);
-  const [redoStack, setRedoStack] = useState<{ nodes: FSNode[]; streams: FSStream[] }[]>([]);
+  // PWA Dynamic Installation Support
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
 
-  // Presets selector
-  const [currentCase, setCurrentCase] = useState(CASE_STUDIES[0]);
-
-  // Administrator state variables
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('');
-
-  // Subscription, Trial periods and locks
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [isLockout, setIsLockout] = useState(false);
-  const [trialTimeLeft, setTrialTimeLeft] = useState('');
-  const [enteredEmail, setEnteredEmail] = useState('');
-  const [authError, setAuthError] = useState('');
-
-  // Setup options for PDF exports
-  const [showPdfSetupModal, setShowPdfSetupModal] = useState(false);
-  const [pdfProjectName, setPdfProjectName] = useState('دراسة موازنة وحسابات سريان التجزئة التبادلية');
-  const [pdfCompanyName, setPdfCompanyName] = useState('شركة مصافي الجنوب بالبصرة - South Refineries Company');
-  const [pdfLeadEngineer, setPdfLeadEngineer] = useState('Eng. Ali Saif Aldeen');
-  const [pdfThermoModel, setPdfThermoModel] = useState('Peng-Robinson (PR) - HYSYS Core');
-
-  // Active side tab selection state to keep the workspace clean and tidy
-  const [activeSideTab, setActiveSideTab] = useState<'AI' | 'CALCULATIONS' | 'HISTORY' | 'ADMIN'>('CALCULATIONS');
-
-  // Monitor licensing and subscription states
-  useEffect(() => {
-    // Determine first visit
-    let firstVisit = localStorage.getItem('chemsim_first_visit');
-    if (!firstVisit) {
-      firstVisit = Date.now().toString();
-      localStorage.setItem('chemsim_first_visit', firstVisit);
-    }
-
-    const firstVisitTime = parseInt(firstVisit);
-    const trialDuration = 24 * 60 * 60 * 1000; // 24 hours trial
-    const timePassed = Date.now() - firstVisitTime;
-
-    // Record login visit once per session
-    const activeUserMail = localStorage.getItem('chemsim_authorized_email') || '';
-    if (!sessionStorage.getItem('chemsim_visit_logged')) {
-      sessionStorage.setItem('chemsim_visit_logged', 'true');
-      if (activeUserMail) {
-        appendActivityLog(activeUserMail, 'LOGIN_SUCCESS', 'زيارة واجهة المحاكاة وتأكيد الجلسة النشطة');
-      } else {
-        appendActivityLog('زائر مجهول / تجريبي', 'LOGIN_FAIL', 'بدء جلسة تصفح وتجربة مجانية للمحاكاة (24 ساعة)');
-      }
-    }
-
-    const checkAccessStatus = () => {
-      // Direct license state bypass - keep completely free and open as requested
-      setIsSubscribed(true);
-      setIsLockout(false);
-      setTrialTimeLeft('النسخة مفعلة مجاناً وبالكامل مدى الحياة ✓');
+  React.useEffect(() => {
+    const handleBeforePrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const handleInstalled = () => {
+      setIsAppInstalled(true);
+      setDeferredPrompt(null);
     };
 
-    checkAccessStatus();
-    const interval = setInterval(checkAccessStatus, 8000);
-    return () => clearInterval(interval);
+    window.addEventListener('beforeinstallprompt', handleBeforePrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    // Initial check
+    if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
+      setIsAppInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforePrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
   }, []);
 
-  // Handle direct client-side subscriber login verification
-  const handleVerifySubscription = (e: React.FormEvent) => {
-    e.preventDefault();
-    const target = enteredEmail.toLowerCase().trim();
-    if (!target) return;
-
-    const adminEmails = ['oilinformation12333@gmail.com', 'alisaifaldeen12@gmail.com'];
-    let recognizedMatched = false;
-
-    if (adminEmails.includes(target)) {
-      recognizedMatched = true;
-    } else {
-      const usersDbStr = localStorage.getItem('chemsim_users_db');
-      if (usersDbStr) {
-        try {
-          const uList = JSON.parse(usersDbStr);
-          const findU = uList.find((u: any) => u.email.toLowerCase().trim() === target);
-          if (findU && findU.status === 'ACTIVE') {
-            recognizedMatched = true;
-          }
-        } catch(err) {}
-      }
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      alert('المنظومة مثبتة بالفعل كـ PWA أو أنه لا يوجد حدث معلق للتثبيت حالياً.');
+      return;
     }
-
-    if (recognizedMatched) {
-      localStorage.setItem('chemsim_authorized_email', target);
-      appendActivityLog(target, 'LOGIN_SUCCESS', 'تم التحقق وتنشيط الدخول الهيدروليكي للمشترك بنجاح');
-      setAuthError('');
-      alert('تم التحقق وتنشيط الدخول الهيدروليكي بنجاح!');
-      window.location.reload();
-    } else {
-      appendActivityLog(target, 'LOGIN_FAIL', 'محاولة تفعيل هيدروليكية فاشلة: البريد غير مفعل في قاعدة المشتركين');
-      setAuthError('عذراً، هذا البريد غير مسجل كحساب مفعل. يُرجى تفعيل الدخول بمراسلتنا على الواتساب 07806053200 بنظام دفع شهري 17$');
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsAppInstalled(true);
     }
-  };
-
-  // Helper to deep clone current state for undo recording
-  const saveStateForUndo = () => {
-    setUndoStack(prev => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), streams: JSON.parse(JSON.stringify(streams)) }]);
-    setRedoStack([]); // Clear redo
-  };
-
-  // Undo execution handler
-  const handleUndo = () => {
-    if (undoStack.length === 0) return;
-    const previous = undoStack[undoStack.length - 1];
-    setUndoStack(prev => prev.slice(0, prev.length - 1));
-    setRedoStack(prev => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), streams: JSON.parse(JSON.stringify(streams)) }]);
-    
-    setNodes(previous.nodes);
-    setStreams(previous.streams);
-  };
-
-  // Redo execution handler
-  const handleRedo = () => {
-    if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack(prev => prev.slice(0, prev.length - 1));
-    setUndoStack(prev => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), streams: JSON.parse(JSON.stringify(streams)) }]);
-    
-    setNodes(next.nodes);
-    setStreams(next.streams);
+    setDeferredPrompt(null);
   };
 
   // Flowsheet modifiers: Adding Nodes
   const handleAddNode = (type: UnitType) => {
-    saveStateForUndo();
     
     // Choose sensible default params based on unit type
     let params: any = {};
@@ -196,7 +111,6 @@ export default function App() {
   };
 
   const handleDeleteNode = (id: string) => {
-    saveStateForUndo();
     setNodes(prev => prev.filter(n => n.id !== id));
     setStreams(prev => prev.filter(s => s.fromNode !== id && s.toNode !== id));
     if (selectedNodeId === id) setSelectedNodeId(null);
@@ -220,7 +134,6 @@ export default function App() {
 
   // Flowsheading streams links modifiers
   const handleAddStream = (name: string, fromNode: string, toNode: string, temp: number, pres: number, flow: number, comps: Record<string, number>) => {
-    saveStateForUndo();
     const id = `str_${Date.now()}`;
     const item: FSStream = {
       id, name, fromNode, toNode,
@@ -233,7 +146,6 @@ export default function App() {
   };
 
   const handleDeleteStream = (id: string) => {
-    saveStateForUndo();
     setStreams(prev => prev.filter(s => s.id !== id));
   };
 
@@ -241,8 +153,6 @@ export default function App() {
   const handleSelectCase = (caseId: string) => {
     const found = CASE_STUDIES.find(cs => cs.id === caseId);
     if (found) {
-      setCurrentCase(found);
-      
       // Map case study simulation to coord nodes system
       if (caseId === 'ethanol_distillation') {
         const customNodes: FSNode[] = [
@@ -287,9 +197,25 @@ export default function App() {
     }
   };
 
+  const handleAdminVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanMail = adminEmail.toLowerCase().trim();
+    const allowedEmails = ['oilinformation12333@gmail.com', 'oilinfomrmation12333@gmail.com', 'alisaifaldeen12@gmail.com', 'admin@got.org'];
+    if (!allowedEmails.includes(cleanMail)) {
+      setAdminError('عذراً، هذا البريد الإلكتروني ليس مسجلاً كمشرف معتمد.');
+      return;
+    }
+    if (adminPassword !== 'admin123' && adminPassword !== 'basra2026') {
+      setAdminError('كلمة المرور غير صحيحة.');
+      return;
+    }
+    setAdminError('');
+    setIsAdmin(true);
+    setShowAdminPanel(false);
+  };
+
   // Modify process parameters dynamically from Form sliders
   const handleParamsChange = (unit: UnitType, newParams: any) => {
-    saveStateForUndo();
     setNodes(prev => prev.map(n => {
       if (n.type === unit) {
         return { ...n, params: { ...n.params, ...newParams } };
@@ -300,7 +226,6 @@ export default function App() {
 
   const handleOverrideState = (newState: SimulationState) => {
     // Map traditional state overrides onto active flowsheet nodes parameters
-    saveStateForUndo();
     setNodes(prev => prev.map(n => {
       if (n.type === 'PUMP' && newState.pump) {
         return { ...n, params: { ...n.params, vaporPressure: newState.pump.vaporPressure } };
@@ -320,7 +245,6 @@ export default function App() {
 
   const handleAutoArrange = () => {
     if (nodes.length === 0) return;
-    saveStateForUndo();
 
     const typeOrder: Record<string, number> = {
       'TANK': 0,
@@ -360,7 +284,6 @@ export default function App() {
 
   // Apply AI Generated Flowsheet
   const handleApplyGeneratedFlowsheet = (newGenNodes: any[], newGenStreams: any[]) => {
-    saveStateForUndo();
     setNodes(newGenNodes);
     setStreams(newGenStreams);
     if (newGenNodes.length > 0) {
@@ -370,7 +293,6 @@ export default function App() {
 
   // Direct load project from local saves index
   const handleLoadSavedProject = (loadedNodes: FSNode[], loadedStreams: FSStream[]) => {
-    saveStateForUndo();
     setNodes(loadedNodes);
     setStreams(loadedStreams);
     if (loadedNodes.length > 0) {
@@ -402,6 +324,10 @@ export default function App() {
 
   // Export Report PDF format / Printable HTML
   const handleExportPDFReport = () => {
+    const pdfProjectName = "Project A";
+    const pdfCompanyName = "Company B";
+    const pdfLeadEngineer = "Engineer C";
+    const pdfThermoModel = "Peng-Robinson";
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('الرجاء السماح بفتح النوافذ المنبثقة لرؤية وطباعة التقرير الهندسي الشامل!');
@@ -591,13 +517,23 @@ export default function App() {
     printWindow.document.close();
   };
 
-  // Safe client-side API call proxying to server-side Gemini client
-  const handlePromptGemini = async (promptText: string, image?: { data: string; mimeType: string }): Promise<string> => {
+  // Safe client-side API call proxying to server-side Gemini client with current flowsheet data awareness!
+  const handlePromptGemini = async (
+    promptText: string,
+    image?: { data: string; mimeType: string },
+    activeNodes?: any[],
+    activeStreams?: any[]
+  ): Promise<string> => {
     try {
       const resp = await fetch('/api/diagnostics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText, image })
+        body: JSON.stringify({
+          prompt: promptText,
+          image,
+          activeNodes: activeNodes || nodes,
+          activeStreams: activeStreams || streams
+        })
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -748,400 +684,568 @@ export default function App() {
   const alarms = calculateAlarms();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-500 selection:text-white" id="main-app">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row-reverse font-sans selection:bg-purple-600 selection:text-white" dir="rtl" id="main-app">
       
-      {/* Visual Header / Branding bar with Eng. Ali Saif details */}
-      <BrandingHeader
-        currentCase={currentCase}
-        onSelectCase={handleSelectCase}
-        isAdmin={isAdmin}
-        onAdminToggle={(status) => {
-          setIsAdmin(status);
-          if (status) {
-            setActiveSideTab('ADMIN');
-          } else if (activeSideTab === 'ADMIN') {
-            setActiveSideTab('CALCULATIONS');
-          }
-        }}
-        adminEmail={adminEmail}
-        setAdminEmail={setAdminEmail}
-      />
-
-      {/* PWA Onboarding & Install banner for Android/iOS */}
-      <PWAInstallBanner />
-
-      {/* Main Workspace Layout Grid */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-6">
-
-        {/* Trial limit alert ribbon */}
-        {!isSubscribed && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-3 px-4 flex flex-col sm:flex-row gap-3 justify-between items-center text-right select-none text-yellow-300">
-            <div className="flex items-center gap-2 flex-row-reverse">
-              <ShieldAlert className="w-4 h-4 text-yellow-400 shrink-0 animate-pulse" />
-              <span className="text-xs font-bold font-sans">تنبيه الفترة التجريبية: أنت مستمر في فترة التجربة المجانية المحددة بـ 24 ساعة</span>
-            </div>
-            <span className="text-[11px] font-mono bg-yellow-500/15 px-3 py-1 rounded-full text-yellow-300 font-bold">
-              {trialTimeLeft}
-            </span>
-          </div>
-        )}
+      {/* 1. RIGHT SIDEBAR NAVIGATION MENU (RTL RTL-first flow) */}
+      <aside className="w-full md:w-72 lg:w-80 flex-shrink-0 bg-slate-900 border-l border-slate-800 flex flex-col z-30 shadow-2xl" id="app-sidebar-navigation">
         
-        {/* SIMULATION WORKSPACE VIEW */}
-        <div className="space-y-6 animate-fadeIn">
-          
-          {/* Flowsheet design layout canvas */}
-          <ProcessFlowsheet
-            nodes={nodes}
-            streams={streams}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
-            onAddNode={handleAddNode}
-            onDeleteNode={handleDeleteNode}
-            onAddStream={handleAddStream}
-            onDeleteStream={handleDeleteStream}
-            onMoveNode={handleMoveNode}
-            alarms={alarms}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            canUndo={undoStack.length > 0}
-            canRedo={redoStack.length > 0}
-            onAutoArrange={handleAutoArrange}
-            onExportJSON={handleExportJSON}
-            onExportPDF={() => setShowPdfSetupModal(true)}
-          />
-
-          {/* Combined Workspace Layout Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Column 1: Flexible Side-Console containing secondary features inside organized tabs (5 columns) */}
-            <div className="lg:col-span-12 xl:col-span-5 space-y-4">
-              
-              {/* Tab Selector Buttons */}
-              <div className="flex border-b border-slate-800 bg-slate-900/40 p-1.5 rounded-xl gap-1 flex-row-reverse" id="side-tab-bar">
-                <button
-                  type="button"
-                  onClick={() => setActiveSideTab('CALCULATIONS')}
-                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all outline-none ${
-                    activeSideTab === 'CALCULATIONS'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                  }`}
-                  id="tab-btn-calcs"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>الحسابات التصميمية</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveSideTab('AI')}
-                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all outline-none ${
-                    activeSideTab === 'AI'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                  }`}
-                  id="tab-btn-ai"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                  <span>المساعد الذكي AI</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveSideTab('HISTORY')}
-                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all outline-none ${
-                    activeSideTab === 'HISTORY'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                  }`}
-                  id="tab-btn-history"
-                >
-                  <Database className="w-3.5 h-3.5" />
-                  <span>أرشيف العمليات</span>
-                </button>
-
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSideTab('ADMIN')}
-                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all outline-none ${
-                      activeSideTab === 'ADMIN'
-                        ? 'bg-amber-600 text-white shadow-md border border-amber-500/20'
-                        : 'text-amber-500 hover:text-amber-400 hover:bg-amber-500/5'
-                    }`}
-                    id="tab-btn-admin"
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>لوحة المشرف</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Dynamic Console Panel View */}
-              <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-0 overflow-hidden shadow-lg" id="tab-content-container">
-                {activeSideTab === 'AI' && (
-                  <AIChatCopilot
-                    onPromptGemini={handlePromptGemini}
-                    onApplyGeneratedFlowsheet={handleApplyGeneratedFlowsheet}
-                  />
-                )}
-                {activeSideTab === 'CALCULATIONS' && (
-                  <DesignCalculations
-                    state={simState}
-                  />
-                )}
-                {activeSideTab === 'HISTORY' && (
-                  <ProjectHistory
-                    nodes={nodes}
-                    streams={streams}
-                    onLoadProject={(loadedNodes, loadedStreams) => {
-                      setNodes(loadedNodes);
-                      setStreams(loadedStreams);
-                    }}
-                  />
-                )}
-                {activeSideTab === 'ADMIN' && isAdmin && (
-                  <AdminPanel
-                    state={simState}
-                    onOverrideState={handleOverrideState}
-                    adminEmail={adminEmail}
-                    onPromptGemini={handlePromptGemini}
-                  />
-                )}
-              </div>
-
-            </div>
-
-            {/* Column 2: Selected Equipment Parameters & HYSYS solver workbook specs (7 columns) */}
-            <div className="lg:col-span-12 xl:col-span-7 space-y-6">
-              
-              {/* Active unit details parameter tuner */}
-              <div className="grid grid-cols-1 gap-6">
-                {activeSelectedNode ? (
-                  <UnitDetails
-                    unitType={activeSelectedNode.type}
-                    state={simState}
-                    onChangeParams={handleParamsChange}
-                    isAdmin={isAdmin}
-                  />
-                ) : (
-                  <div className="bg-slate-900 border border-slate-850/80 rounded-2xl p-6 text-center text-xs text-slate-400 font-sans shadow-lg">
-                    من فضلك، انقر فوق أي وحدة أو خط على لوحة العمل في الأعلى لعرض وتخصيص التفاصيل والدايناميكية الفيزيائية الخاصة به.
-                  </div>
-                )}
-              </div>
-
-              {/* HYSYS steady-state solver workbook ledger */}
-              <StatusMonitor
-                nodes={nodes}
-                streams={streams}
-                onUpdateStreams={setStreams}
-              />
-              
-            </div>
-
+        {/* Brand/Accreditation section inside the sidebar */}
+        <div className="p-6 border-b border-slate-800 bg-slate-950/50 flex items-center gap-3.5 flex-row-reverse">
+          <G_OTLogo size="sm" className="shrink-0" />
+          <div className="text-right flex-1 select-none">
+            <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase block w-fit ml-auto">
+              G&OT SYSTEM
+            </span>
+            <h2 className="text-sm font-extrabold text-white mt-1 bg-gradient-to-l from-slate-100 via-blue-200 to-emerald-200 bg-clip-text text-transparent leading-snug">
+              الهيئة العامة للمهندسين
+            </h2>
+            <p className="text-[10px] text-slate-400 font-mono">
+              Petrochemical Lab Suite v3.5
+            </p>
           </div>
-
         </div>
 
-        {/* Process Alarms Bulletin Board */}
-        {alarms.length > 0 && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4" id="alarms-bulletin">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-850">
-              <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
-              <h4 className="font-bold text-slate-100 text-sm">نشرة إنذارات السلامة الحركية الجارية (Plant Security Alerts)</h4>
-            </div>
+        {/* Dynamic Sidebar Menus/Lists */}
+        <nav className="p-4 flex-1 space-y-1.5 overflow-y-auto" id="sidebar-tab-menu-list">
+          <div className="text-[10px] uppercase font-mono text-slate-500 tracking-wider mb-2 text-right">
+            القوائم واللوحات الأساسية
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 select-none animate-fadeIn">
-              {alarms.map((alarm, idx) => (
-                <div 
-                  key={idx} 
-                  className={`p-4 rounded-xl border flex gap-3 text-xs leading-relaxed text-right md:text-left ${
-                    alarm.type === 'CRITICAL' 
-                      ? 'bg-red-600/10 border-red-500/30 text-red-300' 
-                      : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
-                  }`}
+          <button
+            type="button"
+            onClick={() => setActiveTab('WELCOME')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-xs transition-all flex-row-reverse text-right ${
+              activeTab === 'WELCOME'
+                ? 'bg-gradient-to-l from-purple-950/40 to-blue-950/40 border border-purple-500/30 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+            }`}
+          >
+            <LayoutGrid className={`w-4 h-4 shrink-0 ${activeTab === 'WELCOME' ? 'text-purple-400' : 'text-slate-500'}`} />
+            <span className="flex-1">الرئيسية والترحيب</span>
+            {activeTab === 'WELCOME' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('WORKSPACE')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-xs transition-all flex-row-reverse text-right ${
+              activeTab === 'WORKSPACE'
+                ? 'bg-gradient-to-l from-purple-950/40 to-blue-950/40 border border-purple-500/30 text-white shadow-lg animate-pulseState'
+                : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+            }`}
+          >
+            <Activity className={`w-4 h-4 shrink-0 ${activeTab === 'WORKSPACE' ? 'text-purple-400' : 'text-slate-500'}`} />
+            <span className="flex-1">غرفة التحكم والمحاكاة</span>
+            {activeTab === 'WORKSPACE' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('CALCULATIONS')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-xs transition-all flex-row-reverse text-right ${
+              activeTab === 'CALCULATIONS'
+                ? 'bg-gradient-to-l from-purple-950/40 to-blue-950/40 border border-purple-500/30 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+            }`}
+          >
+            <BookOpen className={`w-4 h-4 shrink-0 ${activeTab === 'CALCULATIONS' ? 'text-purple-400' : 'text-slate-500'}`} />
+            <span className="flex-1">الحسابات الهيدروليكية</span>
+            {activeTab === 'CALCULATIONS' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('HISTORY')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-xs transition-all flex-row-reverse text-right ${
+              activeTab === 'HISTORY'
+                ? 'bg-gradient-to-l from-purple-950/40 to-blue-950/40 border border-purple-500/30 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+            }`}
+          >
+            <Database className={`w-4 h-4 shrink-0 ${activeTab === 'HISTORY' ? 'text-purple-400' : 'text-slate-500'}`} />
+            <span className="flex-1">أرشيف العمليات والمشاريع</span>
+            {activeTab === 'HISTORY' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('REFERENCES')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-xs transition-all flex-row-reverse text-right ${
+              activeTab === 'REFERENCES'
+                ? 'bg-gradient-to-l from-purple-950/40 to-blue-950/40 border border-purple-500/30 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+            }`}
+          >
+            <GraduationCap className={`w-4 h-4 shrink-0 ${activeTab === 'REFERENCES' ? 'text-purple-400' : 'text-slate-500'}`} />
+            <span className="flex-1">المراجع والمصادر العلمية</span>
+            {activeTab === 'REFERENCES' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+          </button>
+
+          {/* PWA Installer Action Panel */}
+          <div className="mt-6 p-4 bg-slate-950/60 border border-slate-850/80 rounded-xl text-right select-none space-y-2">
+            <div className="flex items-center gap-2 justify-between flex-row-reverse">
+              <span className="text-[9px] uppercase font-bold text-emerald-400 font-mono tracking-wider">
+                PWA OFFLINE APPS
+              </span>
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-normal">
+              {isAppInstalled 
+                ? 'تم دمج وتحميل حزم العمل دون إنترنت بنجاح!' 
+                : 'يدعم التثبيت الفوري كبرنامج مستقل ذو حواسب هيدروليكية ممتدة على الكومبيوتر والهواتف.'}
+            </p>
+            {isAppInstalled ? (
+              <div className="text-[10px] font-bold text-emerald-450 bg-emerald-500/10 border border-emerald-500/25 py-2 px-3 rounded-lg text-center">
+                ✓ التطبيق مثبت ومثالي على جهازك الحالي
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleInstallPWA}
+                className="w-full py-2 px-3 bg-purple-650 hover:bg-purple-550 border border-purple-500/30 text-white font-bold text-[10px] rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <span>تثبيت تطبيق المنصة المستقل 📲</span>
+              </button>
+            )}
+          </div>
+        </nav>
+
+        {/* Bottom Sidebar Footer section: Supervisor Info & Admin Status */}
+        <div className="p-4 bg-slate-950 border-t border-slate-850 text-right space-y-3">
+          <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center gap-3 flex-row-reverse">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+              <Compass className="w-4 h-4" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <div className="text-[8px] text-slate-500 font-mono">DEVELOPER ENGINEER</div>
+              <div className="text-[10px] font-bold text-slate-200 truncate leading-snug" dir="ltr">
+                Eng.Ali saif AlDIN Haider Alnawfal
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 text-[10px] font-mono border-t border-slate-850 pt-3">
+            <div className="flex items-center gap-1.5 flex-row-reverse text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Jacobi Solver: Stable</span>
+            </div>
+            
+            {isAdmin ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-sans">مشرف ✓</span>
+                <button
+                  onClick={() => setIsAdmin(false)}
+                  className="text-slate-500 hover:text-rose-400 font-sans text-[9px] transition-all"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-1 flex-row-reverse">
-                      <span className="font-bold text-white bg-slate-950 px-2 py-0.5 rounded text-[10px]">{alarm.unit}</span>
-                      <span className={`font-mono text-[9px] px-1 py-0.5 rounded ${alarm.type === 'CRITICAL' ? 'bg-rose-500 text-white' : 'bg-yellow-500 text-slate-950'}`}>{alarm.type}</span>
+                  خروج
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setActiveTab('WELCOME');
+                  setShowAdminPanel(true);
+                }}
+                className="text-yellow-400 hover:text-yellow-300 font-sans text-[9px] font-semibold tracking-wide border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 px-2 py-1 rounded-md transition-all shrink-0"
+              >
+                دخول المشرفين
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. MAIN PAGES AREA */}
+      <main className="flex-1 overflow-y-auto" id="app-main-content-flow">
+        
+        {/* UPPER MINIMALIST CONSOLE HEADING */}
+        <header className="bg-slate-900/60 border-b border-slate-850 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 backdrop-blur-md z-20">
+          <div className="text-right">
+            <span className="text-[10px] font-bold text-purple-400 font-mono tracking-wider">
+              CHEMSIM LAB ENGINE v3.5
+            </span>
+            <h1 className="text-base font-bold text-slate-200 mt-0.5">
+              {activeTab === 'WELCOME' && 'البوابة الرئيسية والمرحباً بالمهندسين'}
+              {activeTab === 'WORKSPACE' && 'مختبر العمليات ومحاكاة السريان المتكامل'}
+              {activeTab === 'CALCULATIONS' && 'براءة الحسابات والموازنات الحرارية والكتلية'}
+              {activeTab === 'HISTORY' && 'أرشيف المشاريع ودراسات الحالات المسبقة'}
+              {activeTab === 'REFERENCES' && 'المصادر والبروتوكولات الهندسية الأكاديمية'}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {activeTab === 'WORKSPACE' && (
+              <button
+                onClick={handleExportPDFReport}
+                className="px-4 py-2 bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-600 hover:to-blue-500 text-slate-100 font-bold rounded-xl shadow-lg border border-blue-500/20 transition-all font-sans text-xs flex items-center gap-1.5 active:scale-95"
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>تحميل تقرير الحسابات PDF</span>
+              </button>
+            )}
+
+            <div className="text-xs text-slate-400 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-850 font-mono font-medium hidden sm:block">
+              Basrah UTC: {new Date().toLocaleDateString('ar-EG')}
+            </div>
+          </div>
+        </header>
+
+        {/* RENDERING DYNAMIC SCREENS ACCORDING TO THE ACTIVE TAB LINKED */}
+        <div className="p-6 max-w-7xl mx-auto space-y-6">
+
+          {/* SCREEN A: WELCOME (البوابة الرئيسية وقصاصة الترحيب المحددة) */}
+          {activeTab === 'WELCOME' && (
+            <div className="space-y-8 animate-fadeIn" id="screen-welcome-dashboard">
+              
+              {/* Centered Huge Glowing Emblem & Welcome banner */}
+              <div className="relative overflow-hidden bg-slate-900 border border-slate-850 rounded-3xl p-8 text-center space-y-6 flex flex-col items-center">
+                
+                {/* Decorative absolute grids */}
+                <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 via-transparent to-transparent opacity-50" />
+                <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                <G_OTLogo size="xl" className="my-2" />
+
+                <div className="max-w-2xl mx-auto space-y-2 relative">
+                  <h2 className="text-2xl md:text-3xl font-black text-white tracking-normal leading-snug">
+                    الهيئة العامة للمهندسين الكيميائيين في البصرة
+                  </h2>
+                  <p className="text-sm font-bold text-amber-400 font-sans tracking-wide">
+                    منصة المحاكاة وموازنة العمليات الكيمياوية والبترولية المتطورة
+                  </p>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto font-mono">
+                    G&OT ENGINEERING • BASRAH PETROCHEMICAL & PROCESS CONTROL SUITE
+                  </p>
+                </div>
+
+                {/* Welcoming text from developer ali seif aldeen */}
+                <div className="max-w-3xl bg-slate-950/80 border border-slate-800 p-6 rounded-2xl relative text-right space-y-4 leading-relaxed font-sans shadow-inner">
+                  <div className="flex items-center gap-2.5 flex-row-reverse">
+                    <Star className="w-5 h-5 text-amber-400" />
+                    <h3 className="text-sm font-bold text-slate-100">تحية تقدير وترحيب من المهندس المطور:</h3>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                    يرحب بكم المهندس المطور والمصمم <strong className="text-blue-450 text-[13px] font-mono">Eng.Ali saif AlDIN Haider Alnawfal</strong> (مطور هذا الصرح التقني) في هذه المنصة التفاعلية المحدثة كلياً.
+                  </p>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    يتمنى لكم المطور والمشهد الهندسي تجربة استخدام ممتعة ومفيدة ومثمرة أكاديمياً وعملياً! تم تصميم هذه البوابة لتجمع لكم أجهزة الرسم البياني الثنائي والتحليلات ثرموديناميكية الذكية في شاشة محددة ومحكمة لمساعدتكم على فهم موازنات كتل السوائل والغازات ومجابهة متغيرات السلامة وصامت التحكم.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-4 justify-center">
+                  <button
+                    onClick={() => setActiveTab('WORKSPACE')}
+                    className="px-6 py-3 bg-gradient-to-l from-purple-650 to-blue-650 hover:from-purple-550 hover:to-blue-550 text-white font-bold text-xs rounded-2xl shadow-xl transition-all hover:scale-[1.02] flex items-center gap-2 flex-row-reverse"
+                  >
+                    <Activity className="w-4 h-4 animate-ping" />
+                    <span>الدخول الفوري إلى مختبر المحاكاة والذكاء الاصطناعي ⚡</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowAdminPanel(!showAdminPanel)}
+                    className="px-5 py-3 bg-slate-950 hover:bg-slate-850 hover:border-slate-700 text-slate-300 border border-slate-800 text-xs rounded-2xl transition-all"
+                  >
+                    🔐 تسجيل دخول المشرفين المعتمدين / Admin
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible Admin credentials login form inside welcome view */}
+              {showAdminPanel && !isAdmin && (
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md mx-auto space-y-4 animate-fadeIn">
+                  <div className="flex items-center justify-between gap-2 flex-row-reverse">
+                    <div className="flex items-center gap-2 flex-row-reverse">
+                      <Lock className="w-4 h-4 text-yellow-400" />
+                      <h4 className="text-xs font-bold text-white font-sans">بوابة المشرفين المعتمدة للهيئة</h4>
                     </div>
-                    <p className="font-bold pt-1 text-slate-100 leading-normal">{alarm.msg}</p>
-                    <p className="text-[10px] text-slate-400 font-mono mt-1">
-                      Parameter value: {alarm.value.toFixed(2)} vs threshold: {alarm.limit}
+                    <button
+                      onClick={() => setShowAdminPanel(false)}
+                      className="text-slate-500 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleAdminVerify} className="space-y-3.5 text-right">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">البريد الإلكتروني المعتمد</label>
+                      <input
+                        type="email"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        placeholder="alisaifaldeen12@gmail.com"
+                        required
+                        className="w-full text-right px-3 py-2 bg-slate-950 border border-slate-800 text-xs text-white rounded-lg focus:outline-none focus:border-purple-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">كلمة مرور المشرف (Password)</label>
+                      <input
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        placeholder="••••••••"
+                        required
+                        className="w-full text-right px-3 py-2 bg-slate-950 border border-slate-800 text-xs text-white rounded-lg focus:outline-none focus:border-purple-500 font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        تلميح تجريبي: <code className="bg-slate-950 px-1 text-purple-400 rounded">basra2026</code>
+                      </p>
+                    </div>
+
+                    {adminError && (
+                      <p className="text-[10px] text-rose-400 bg-rose-500/10 p-2.5 rounded-lg border border-rose-500/20 font-sans">
+                        ⚠️ {adminError}
+                      </p>
+                    )}
+
+                    <div className="pt-2 flex justify-end gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPanel(false)}
+                        className="px-3.5 py-1.5 border border-slate-800 hover:bg-slate-850 text-slate-400 rounded-lg"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 bg-gradient-to-l from-purple-650 to-blue-650 hover:bg-purple-500 text-white font-bold rounded-lg"
+                      >
+                        تأكيد الصلاحية
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Quick Preset study Launchers container */}
+              <div className="space-y-4">
+                <div className="text-right">
+                  <h3 className="text-sm font-bold text-slate-300">اختر منظومة كيميائية لبدء المحاكاة المباشرة:</h3>
+                  <p className="text-[11px] text-slate-500">حالات دراسية بترولية مبرمجة ومغذاة بموازين كيميائية دقيقة</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {CASE_STUDIES.map((study) => (
+                    <div
+                      key={study.id}
+                      className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 p-5 rounded-2xl flex flex-col justify-between space-y-4 transition-all hover:scale-[1.01] relative select-none"
+                    >
+                      <div className="absolute top-3 left-4 text-[9px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full font-mono uppercase">
+                        {study.id === 'ethanol_distillation' && 'Fractionation'}
+                        {study.id === 'cstr_synthesis' && 'Kinetics'}
+                        {study.id === 'gas_boosting' && 'Compression'}
+                      </div>
+
+                      <div className="space-y-2 text-right pt-2">
+                        <h4 className="font-bold text-xs text-white leading-relaxed">
+                          {study.name}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-3 font-sans">
+                          {study.description}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          handleSelectCase(study.id);
+                          setActiveTab('WORKSPACE');
+                        }}
+                        className="w-full py-2.5 bg-slate-950 hover:bg-blue-600/20 border border-slate-800 hover:border-blue-500/30 text-blue-400 hover:text-white transition-all rounded-xl text-[10px] font-bold tracking-wide block text-center"
+                      >
+                        ابدأ تشغيل المحاكاة الفورية ⚡
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* SCREEN B: WORKSPACE (مختبر غرفة التحكم المحكمة للبوت واللوحة معاً في شاشة واحدة!) */}
+          {activeTab === 'WORKSPACE' && (
+            <div className="space-y-6 animate-fadeIn" id="screen-unify-workspace">
+              
+              {/* Responsive 12 Columns Combined Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                {/* Master column left: Flowsheet graphics interactive canvas (Takes 8/12 of space on desktop) */}
+                <div className="lg:col-span-12 xl:col-span-8 flex flex-col space-y-6">
+                  
+                  <div className="bg-slate-900/40 border border-slate-850 rounded-3xl p-5 relative overflow-hidden">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-850 mb-4 flex-row-reverse">
+                      <div className="flex items-center gap-2.5 flex-row-reverse">
+                        <Flame className="w-5 h-5 text-purple-400" />
+                        <div className="text-right">
+                          <h3 className="font-bold text-xs text-white">لوحة تدفق السريان التفاعلية (Process Flowsheet Studio)</h3>
+                          <p className="text-[9px] text-slate-400">انقر مع السحب لإزاحة المعدات وتعديل قيم موازنة ثنائية الأنابيب المتصلة</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-mono text-[9px] text-slate-500">
+                        <span>SNAP GRID: LOCKED</span>
+                      </div>
+                    </div>
+
+                    <ProcessFlowsheet
+                      nodes={nodes}
+                      streams={streams}
+                      selectedNodeId={selectedNodeId}
+                      onSelectNode={setSelectedNodeId}
+                      onAddNode={handleAddNode}
+                      onDeleteNode={handleDeleteNode}
+                      onAddStream={handleAddStream}
+                      onDeleteStream={handleDeleteStream}
+                      onMoveNode={handleMoveNode}
+                      alarms={alarms}
+                      onUndo={() => {}}
+                      onRedo={() => {}}
+                      canUndo={false}
+                      canRedo={false}
+                      onAutoArrange={handleAutoArrange}
+                      onExportJSON={handleExportJSON}
+                      onExportPDF={handleExportPDFReport}
+                    />
+                  </div>
+
+                </div>
+
+                {/* Side column right: AI Copilot Assistant chatbot directly next to it (Takes 4/12 of space) */}
+                <div className="lg:col-span-12 xl:col-span-4 flex flex-col space-y-6">
+                  
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[550px]" id="copilot-grid-sidebar">
+                    <div className="p-4 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between flex-row-reverse">
+                      <div className="flex items-center gap-2 flex-row-reverse">
+                        <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                        <div className="text-right">
+                          <h4 className="font-bold text-xs text-white font-sans">المساعد الكيمياوي الذكي (AI Assistant)</h4>
+                          <p className="text-[9px] text-slate-500 font-mono">Generates dynamic solutions on canvas</p>
+                        </div>
+                      </div>
+                      <span className="text-[8px] bg-slate-800 text-slate-450 px-2 py-0.5 rounded font-mono">
+                        Active Memory
+                      </span>
+                    </div>
+
+                    <div className="flex-1 overflow-hidden p-0 flex flex-col">
+                      <AIChatCopilot
+                        onPromptGemini={handlePromptGemini}
+                        onApplyGeneratedFlowsheet={handleApplyGeneratedFlowsheet}
+                        activeNodes={nodes}
+                        activeStreams={streams}
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* SCREEN C: CALCULATIONS (براءات التصميم والحسابات الهيدروليكية والديناميكية) */}
+          {activeTab === 'CALCULATIONS' && (
+            <div className="space-y-6 animate-fadeIn" id="screen-calculations">
+              
+              <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 relative">
+                <div className="absolute top-4 left-6 py-1 px-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full font-mono text-[10px] uppercase">
+                  Active Physics Module
+                </div>
+                
+                <DesignCalculations state={simState} />
+              </div>
+
+            </div>
+          )}
+
+          {/* SCREEN D: HISTORY (أرشيف حفظ النماذج واسترداد المخططات) */}
+          {activeTab === 'HISTORY' && (
+            <div className="space-y-6 animate-fadeIn" id="screen-history">
+              
+              <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6">
+                <ProjectHistory
+                  nodes={nodes}
+                  streams={streams}
+                  onLoadProject={(loadedNodes, loadedStreams) => {
+                    setNodes(loadedNodes);
+                    setStreams(loadedStreams);
+                    setActiveTab('WORKSPACE');
+                  }}
+                />
+              </div>
+
+            </div>
+          )}
+
+          {/* SCREEN E: REFERENCES (مصادر الهيئة والمراجع الأكاديمية المعتمدة لبروست وثيرمو) */}
+          {activeTab === 'REFERENCES' && (
+            <div className="space-y-6 animate-fadeIn text-right" id="screen-references">
+              
+              <div className="bg-slate-900 border border-slate-850 rounded-3xl p-8 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-transparent to-transparent pointer-events-none" />
+                
+                <div className="space-y-2 max-w-xl">
+                  <h3 className="text-xl font-bold text-white leading-snug">
+                    البروتوكولات الأكاديمية والمصادر الهندسية المعتمدة
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                    تمت معايرة ومطابقة مخرجات موازنات المادة والخواص الثرموديناميكية لـ ChemSim AI بالاعتماد على الكتب والمقررات الهندسية الكيميائية والصناعية الرائدة لضمان الكفاءة القصوى:
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 select-none">
+                  {CHEMICAL_REFS.map((ref, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-slate-950 border border-slate-850/80 p-5 rounded-2xl space-y-3 shadow-md"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-row-reverse">
+                        <span className="text-[10px] bg-slate-800 text-slate-400 font-mono px-2 py-0.5 rounded-md">
+                          مرجع رقم #{idx + 1}
+                        </span>
+                        <h4 className="font-extrabold text-xs text-blue-400 font-sans">
+                          {ref.title}
+                        </h4>
+                      </div>
+                      
+                      <div className="text-[11px] text-slate-400 font-sans space-y-1">
+                        <p><strong>المؤلفون:</strong> {ref.authors}</p>
+                        <p><strong>الإصدار الناشر:</strong> {ref.edition}</p>
+                      </div>
+
+                      <div className="bg-slate-900/55 p-3 rounded-xl border border-slate-850 mt-2 text-xs text-slate-300 leading-relaxed font-sans">
+                        <strong>تطبيق المعادلة:</strong> {ref.useCase}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 mt-8 flex items-center gap-4 flex-row-reverse text-right leading-relaxed font-sans">
+                  <div className="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+                    <GraduationCap className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-100">آمن ومطابق لمقاييس التصميم والموازنة</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      يتم تسوية وتدوير معادلات فنسكي للمكعبات، معاملات ثنائي السوائل، والهروب الكيميائي الحركي لتضاهي برمجيات Aspen HYSYS و Pro/II، بفضل الترابط الخوارزمي المستدام.
                     </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
 
+            </div>
+          )}
+
+        </div>
       </main>
-
-      {/* Corporate Academic Footer */}
-      <footer className="bg-slate-950 border-t border-slate-900 text-slate-500 py-6 mt-12 text-center" id="academic-footer">
-        <div className="max-w-7xl mx-auto px-4 space-y-2">
-          <p className="text-xs leading-relaxed">
-            تطبيق المحاكاة الهندسية الكيميائية المتكامل • تم التجهيز بالتشاور مع لوائح معهد المهندسين الكيميائيين ونظم توازن الفروع
-          </p>
-          <p className="text-[11px] font-sans text-slate-400">
-            بإشراف وتطوير المهندس <b>علي سيف الدين حيدر النوفل</b> (الهيئة العامة للمهندسين الكيميائيين في البصرة)
-          </p>
-          <div className="text-[10px] font-mono text-slate-600 pt-2 flex flex-col md:flex-row items-center justify-center gap-4">
-            <span>المنصة الأكاديمية للمحاكاة وتصميم العمليات</span>
-            <span className="hidden md:inline">•</span>
-            <span>بإشراف وتثبيت ترخيص الهيئة بالبصرة</span>
-            <span className="hidden md:inline">•</span>
-            <span>Basra, Iraq, 2026</span>
-          </div>
-        </div>
-      </footer>
-
-      {/* PDF Generation Customization Modal */}
-      {showPdfSetupModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl relative">
-            <button 
-              onClick={() => setShowPdfSetupModal(false)}
-              className="absolute top-4 left-4 text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <h3 className="font-bold text-slate-100 text-sm border-b border-slate-800 pb-2">تخصيص معلومات التقرير الهندسي (PDF Setup)</h3>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">اسم المشروع التصميمي:</label>
-                <input 
-                  type="text"
-                  value={pdfProjectName}
-                  onChange={(e) => setPdfProjectName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 outline-none text-right"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">الشركة / المنشأة المستفيدة:</label>
-                <input 
-                  type="text"
-                  value={pdfCompanyName}
-                  onChange={(e) => setPdfCompanyName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 outline-none text-right"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">اسم كبير مهندسي العمليات:</label>
-                <input 
-                  type="text"
-                  value={pdfLeadEngineer}
-                  onChange={(e) => setPdfLeadEngineer(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 outline-none text-right"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">النموذج الحراري (Thermo Model Override):</label>
-                <select 
-                  value={pdfThermoModel}
-                  onChange={(e) => setPdfThermoModel(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:border-blue-500 outline-none text-right"
-                >
-                  <option value="Peng-Robinson (PR) - HYSYS Core">Peng-Robinson (PR) - HYSYS Core</option>
-                  <option value="NRTL - Activity Coefficient">NRTL - Activity Coefficient</option>
-                  <option value="UNIQUAC - Complex Polymers">UNIQUAC - Complex Polymers</option>
-                  <option value="SRK (Soave-Redlich-Kwong)">SRK (Soave-Redlich-Kwong)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => {
-                  handleExportPDFReport();
-                  setShowPdfSetupModal(false);
-                }}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-xl text-xs transition active:scale-95 flex items-center justify-center gap-1.5"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>إصدار وتحميل التقرير PDF</span>
-              </button>
-              <button
-                onClick={() => setShowPdfSetupModal(false)}
-                className="bg-slate-950 hover:bg-slate-800 text-slate-400 px-4 py-2 rounded-xl text-xs transition"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Subscription licensing limit blocker overlay */}
-      {isLockout && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-8 max-w-lg w-full text-center space-y-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500"></div>
-            
-            <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/30">
-              <ShieldAlert className="w-8 h-8 text-red-500" />
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-slate-500 text-[10px] block mx-auto font-mono">LICENSE_LIMIT_TIMEOUT [24H_FREE_TRIAL_EXPIRED]</span>
-              <h3 className="text-xl font-bold text-slate-100">انتهت فترة التجربة المجانية (24 ساعة)</h3>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
-                لقد استخدمت محاكي العمليات وموازنة الموائع aspen HYSYS-like لمدة يوم كامل مجاناً. للتمكن من الاستمرار في المحاكيات، وتوليد تقارير PDF الهندسية المعتمدة للمصافي، يُرجى الاشتراك السنوي أو الشهري بمبلغ 17$ لتفعيل ترخيصك الفوري.
-              </p>
-            </div>
-
-            <div className="bg-slate-950/60 p-4 border border-slate-850 rounded-2xl text-right">
-              <p className="text-xs text-slate-400">سعر الاشتراك المباشر للتفعيل:</p>
-              <div className="flex justify-between items-center mt-1 flex-row-reverse">
-                <span className="text-lg font-bold text-emerald-400">17 دولار فقط / شهرياً</span>
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full">تنشيط رسمي الهيئة بالبصرة</span>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <a 
-                href="https://wa.me/9647806053200" 
-                target="_blank" 
-                rel="noreferrer"
-                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-900/15"
-              >
-                تحديث وتفعيل وتواصل واتساب: 07806053200
-              </a>
-              
-              <div className="border-t border-slate-800/80 pt-4 mt-2">
-                <p className="text-[11px] text-slate-400 mb-2">هل تمتلك بريداً إلكترونياً مشتركاً ومفعلاً؟ أدخله للدخول المباشر:</p>
-                <form onSubmit={handleVerifySubscription} className="flex gap-2">
-                  <input 
-                    type="email" 
-                    required
-                    placeholder="example@gmail.com" 
-                    value={enteredEmail}
-                    onChange={(e) => setEnteredEmail(e.target.value)}
-                    className="flex-1 bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 text-xs focus:border-blue-500 outline-none text-right"
-                  />
-                  <button 
-                    type="submit" 
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95 shrink-0"
-                  >
-                    تفعيل الدخول
-                  </button>
-                </form>
-                {authError && <p className="text-[10px] text-red-400 mt-2 text-right">{authError}</p>}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );
 }
+
