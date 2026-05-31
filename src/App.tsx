@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { GoogleGenAI } from '@google/genai';
 import { UnitType, SimulationState, FSNode, FSStream, Alarm } from './types';
 import { CASE_STUDIES, CHEMICAL_REFS } from './data/chemData';
 import ProcessFlowsheet from './components/ProcessFlowsheet';
@@ -524,6 +525,7 @@ export default function App() {
     activeNodes?: any[],
     activeStreams?: any[]
   ): Promise<string> => {
+    // 1. Try calling the local backend server API route first
     try {
       const resp = await fetch('/api/diagnostics', {
         method: 'POST',
@@ -535,13 +537,99 @@ export default function App() {
           activeStreams: activeStreams || streams
         })
       });
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.error || 'Failed to analyze');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.text) {
+          return data.text;
+        }
       }
-      return data.text || '';
+      console.warn("Backend `/api/diagnostics` returned non-ok status. Falling back to client-side direct call.");
     } catch (err: any) {
-      throw err;
+      console.warn("Express backend proxy unreachable or threw error. Moving to browser-side Gemini client.", err);
+    }
+
+    // 2. Client-side direct call (Perfect for Netlify serverless/static deployments with zero infrastructure excuses!)
+    const clientKey = localStorage.getItem('gemini_api_key') || (import.meta as any).env.VITE_GEMINI_API_KEY || '';
+    if (clientKey && clientKey.trim() !== '') {
+      try {
+        console.log("Initiating client-side direct GoogleGenAI call with client key...");
+        const ai = new GoogleGenAI({
+          apiKey: clientKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
+
+        const nodesContext = activeNodes || nodes;
+        const streamsContext = activeStreams || streams;
+        const flowsheetContext = (nodesContext && nodesContext.length > 0)
+          ? `\n\nالمخطط الحالي المتواجد على لوحة الرسم للمستخدم يحتوي على الوحدات والتوصيلات الكيميائية التالية:
+- الأجهزة والمعدات الحالية (Nodes): ${JSON.stringify(nodesContext)}
+- أنابيب وتيارات السريان الحالية (Streams): ${JSON.stringify(streamsContext)}
+
+مهم جداً: إذا طلب المستخدم تعديل هذا المخطط، أو تغيير بارامتر (مثل زيادة درجة حرارة، أو تغيير تدفق، أو تعديل ضغط)، أو إضافة معدة جديدة، أو حذف معدة، فيرجى قراءة هذه البيانات السابقة وإجراء التعديل الهندسي المطلوب وتحديث بارامترات كل الأنابيب المتأثرة هيدروليكياً، ثم إرجاع المخطط المستحدث كاملاً ومحدثاً في قالب \`\`\`json-flowsheet مع الحفاظ على الأجهزة الأخرى وتجنب التراكب الإحداثي.`
+          : `\n\nالمخطط الحالي فارغ أو غير متوفر في اللوحة. يرجى اقتراح وتصميم مخطط كيميائي متكامل كلياً بناءً على استفسار المستخدم وتوليده بترميز \`\`\`json-flowsheet.`;
+
+        const promptWithContext = flowsheetContext + "\n\nسؤال واستفسار المهندس الحالي:\n" + promptText;
+
+        const contents = image ? {
+          parts: [
+            {
+              inlineData: {
+                mimeType: image.mimeType,
+                data: image.data
+              }
+            },
+            {
+              text: promptWithContext
+            }
+          ]
+        } : promptWithContext;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: contents,
+          config: {
+            systemInstruction: `أنت الأستاذ الدكتور الاستشاري الأول في الهندسة الكيميائية وتصميم العمليات البتروكيمياوية بمصافي البصرة. أنت الصديق والمساعد العلمي للمهندس اللامع (علي سيف الدين حيدر النوفل) في الهيئة العامة للمهندسين الكيميائيين بالبصرة.
+            قم بتحليل واستكشاف أي صورة مخطط عمليات يتم إرفاقها بدقة، وحدد الوحدات والمبادلات والضغوط والحرارة والتدفقات، وقدم شرحاً علمياً لعملية الفصل أو التفاعل الكيميائي.
+            
+            ملاحظة وقاعدة بالغة الأهمية:
+            1. إذا ارفق المستخدم صورة مخطط بسيط أو رسم كروكي يفتقر للتفاصيل الدقيقة مثل (درجات الحرارة، الضغوط، موازنات المادة والطاقة، ونوع السريان)، فيجب عليك الاستعانة بمخزونك المعرفي وقاعدة بيانات HYSYS الهندسية العميقة لتعريف وتخمين هذه المقادير الكيميائية وتصميم موازنة مادة وطاقة متكاملة وافتراضها بدقة بالغة واحترافية تامة لتبدو دراسة جدوى حقيقية صالحة للتشغيل في مصافي النفط الكبرى.
+            2. احرص تماماً وبشكل حازم على تنسيق وتوزيع إحداثيات المعدات الكيميائية في حقل "nodes" ضمن ترميز الـ \`\`\`json-flowsheet لتجنب أي تراكب أو تداخل هندسي (المعدات فوق بعضها). رتبها بشكل تدفقي هندسي أنيق من اليسار إلى اليمين:
+               - خزانات التغذية (FEED/TANK): توضع في أقصى اليسار الإحداثي (x ما بين 80 إلى 150).
+               - المضخات والمبادلات (PUMP/EXCHANGER/VALVE): توضع في المرحلة الثانية (x ما بين 250 إلى 400).
+               - المفاعلات والصفائح والمكابس (REACTOR/COMPRESSOR): توضع في الوسط (x ما بين 450 إلى 650).
+               - الفواصل وأعمدة الفصل والتكرير وخزانات المنتج النهائي (SEPARATOR/COLUMN/TANK): توضع يميناً (x ما بين 750 إلى 950).
+               - يمنع منعاً باتاً تداخل المعدات، واحرص على أن لا تقل المسافة الأفقية بين أي وحدة ووحدة عن 180 بكسل، والمسافة الرأسية في حال وجود وحدات متوازية لا تقل عن 140 بكسل لضمان سريان ناصع الأنابيب وخالٍ من الفوضى البصرية.
+               
+            اختتم الرد دوماً بتوزيع مخطط تدفق جديد بترميز \`\`\`json-flowsheet مطابق للرسم البصري المرفق لتمكين تشغيل المحاكاة وتقدير موازين المادة والموائع.
+            أجب على استفسارات المهندس بدقة علمية وصياغة أكاديمية واضحة مدعومة بالمصادر الهندسية (كتاب بيري لمهندسي الكيمياء، مكيب، ليفنسبيل، وثرمودينامك سميث وفان نيس).
+            اجعل الأسلوب احترافياً، مشجعاً، ومليئاً بالثقة، موجهاً دوماً بعبارة "بإشراف وتطوير المهندس علي سيف الدين حيدر النوفل".`
+          }
+        });
+
+        if (response.text) {
+          return response.text;
+        }
+        throw new Error("Empty response from browser direct call");
+      } catch (clientErr: any) {
+        console.error("Browser direct call threw error:", clientErr);
+        throw clientErr;
+      }
+    }
+
+    // 3. No local API and No client API key found (Specifically trigger Netlify setup helper)
+    const isStaticDeploy = window.location.hostname.includes('netlify') || 
+                           window.location.hostname.includes('github.io') || 
+                           window.location.hostname.includes('web.app') || 
+                           (window.location.hostname.includes('localhost') === false && window.location.port !== '3000');
+    
+    if (isStaticDeploy) {
+      throw new Error("NETLIFY_MISSING_API_KEY");
+    } else {
+      throw new Error("الرجاء تشغيل الخادم المحلي أو تعيين مفتاح API لتشغيل مفسر المخططات.");
     }
   };
 
